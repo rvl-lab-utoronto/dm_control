@@ -71,10 +71,13 @@ _symlog1p = lambda x, random_state: np.sign(x) * np.log1p(abs(x))
 _DISABLED_FTT = _DISABLED_FEATURE._replace(corruptor=_symlog1p)
 _ENABLED_FTT = _ENABLED_FEATURE._replace(corruptor=_symlog1p)
 
+_DEF_CAM_HEIGHT = 64 #84
+_DEF_CAM_WIDTH = 64 #84
+
 # Global defaults for camera observables.
 _DISABLED_CAMERA = CameraObservableSpec(
-    height=84,
-    width=84,
+    height=_DEF_CAM_HEIGHT,
+    width=_DEF_CAM_WIDTH,
     enabled=False,
     update_interval=1,
     buffer_size=1,
