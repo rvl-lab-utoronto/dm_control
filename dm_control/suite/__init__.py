@@ -45,8 +45,10 @@ from dm_control.suite import stacker
 from dm_control.suite import swimmer
 from dm_control.suite import walker
 
+from dm_control.suite import walker2
 from dm_control.suite import swimmer2
 from dm_control.suite import quadruped2
+from dm_control.suite import pm2
 
 # Find all domains imported.
 _DOMAINS = {name: module for name, module in locals().items()
