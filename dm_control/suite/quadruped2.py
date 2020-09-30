@@ -59,7 +59,7 @@ SUITE = containers.TaggedTasks()
 
 
 def make_model(floor_size=None, terrain=False, rangefinders=False,
-               walls_and_ball=False):
+               walls=False, ball=False):
   """Returns the model XML string."""
   xml_string = common.read_model('quadruped2.xml')
   parser = etree.XMLParser(remove_blank_text=True)
@@ -71,11 +71,12 @@ def make_model(floor_size=None, terrain=False, rangefinders=False,
     floor_geom.attrib['size'] = '{} {} .5'.format(floor_size, floor_size)
 
   # Remove walls, ball and target.
-  if not walls_and_ball:
+  if not walls:
     for wall in _WALLS:
       wall_geom = xml_tools.find_element(mjcf, 'geom', wall)
       wall_geom.getparent().remove(wall_geom)
-
+    
+  if not ball:
     # Remove ball.
     ball_body = xml_tools.find_element(mjcf, 'body', 'ball')
     ball_body.getparent().remove(ball_body)
@@ -170,6 +171,30 @@ def fetchtransferpost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_k
                              **environment_kwargs)
 
 
+@SUITE.add()
+def reachtransferpre(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls_and_ball=True)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = FetchTransfer(pretransfer=True, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def reachtransferpost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls_and_ball=True)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = FetchTransfer(pretransfer=False, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+
+
 class Physics(mujoco.Physics):
   """Physics simulation with additional features for the Quadruped domain."""
 
@@ -187,6 +212,15 @@ class Physics(mujoco.Physics):
       sensor_names = [self.model.id2name(s_id, 'sensor') for s_id in sensor_ids]
       self._sensor_types_to_names[sensor_types] = sensor_names
     return sensor_names
+
+  def torso_pos(self):
+    torso_pos = self.named.data.xpos['torso']
+    return torso_pos
+
+  def global_forward_vector(self):
+    return self.named.data.xmat['torso', ['xx', 'yx', 'zx']]
+    # torso_pos = self.named.data.xmat['torso']
+    # return torso_pos
 
   def torso_upright(self):
     """Returns the dot-product of the torso z-axis and the global z-axis."""
@@ -268,6 +302,12 @@ class Physics(mujoco.Physics):
 
   def self_to_ball_distance(self):
     """Returns horizontal distance from the quadruped workspace to the ball."""
+    self_to_ball = (self.named.data.site_xpos['workspace']
+                    -self.named.data.xpos['ball'])
+    return np.linalg.norm(self_to_ball[:2])
+
+  def self_to_target_distance(self):
+    """Returns horizontal distance from the quadruped torso to the target."""
     self_to_ball = (self.named.data.site_xpos['workspace']
                     -self.named.data.xpos['ball'])
     return np.linalg.norm(self_to_ball[:2])
@@ -502,95 +542,6 @@ class Fetch(base.Task):
 
     return _upright_reward(physics) * reach_then_fetch
 
-class Reach(base.Task):
-  def __init__(self, pretransfer, desired_speed, random=None):
-    """Initializes an instance of `Move`.
-
-    Args:
-      pretransfer: A bool. If true, solve the velocity task. If false, solve the fetch task
-      desired_speed: A float. If this value is zero, reward is given simply
-        for standing upright. Otherwise this specifies the velocity norm
-        at which the velocity-dependent reward component is maximized.
-      random: Optional, either a `numpy.random.RandomState` instance, an
-        integer seed for creating a new `RandomState`, or None to select a seed
-        automatically (default).
-    """
-    self._pretransfer = pretransfer
-    self._desired_speed = desired_speed
-    super(FetchTransfer, self).__init__(random=random)
-
-  def initialize_episode(self, physics):
-    """Sets the state of the environment at the start of each episode.
-
-    Args:
-      physics: An instance of `Physics`.
-
-    """
-
-    spawn_radius = 0.75 * physics.named.model.geom_size['floor', 0]
-    x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
-    # if self._pretransfer:
-    orientation = self.random.randn(4)
-    orientation /= np.linalg.norm(orientation)
-    _find_non_contacting_height(physics, orientation, x_pos, y_pos)
-    # else:
-      # Initial configuration, random azimuth and horizontal position.
-    # azimuth = self.random.uniform(0, 2*np.pi)
-    # orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
-    # _find_non_contacting_height(physics, orientation, x_pos, y_pos)
-
-    # Initial ball state.
-    physics.named.data.qpos['ball_root'][:2] = self.random.uniform(
-        -spawn_radius, spawn_radius, size=(2,))
-    physics.named.data.qpos['ball_root'][2] = 0.3
-    physics.named.data.qvel['ball_root'][:2] = 5*self.random.randn(2)*0.2
-    super(FetchTransfer, self).initialize_episode(physics)
-
-  def get_observation(self, physics):
-    """Returns an observation to the agent."""
-    obs = _common_observations(physics)
-    obs['ball_state'] = physics.ball_state()
-    obs['target_position'] = physics.target_position()
-    return obs
-
-  def get_reward(self, physics):
-    """Returns a reward to the agent."""
-
-    if self._pretransfer:
-      # Move reward term.
-      #vel_norm = np.linalg.norm(physics.torso_velocity()[:2])
-      move_reward = rewards.tolerance(
-          physics.torso_velocity()[0],
-          bounds=(self._desired_speed, float('inf')),
-          margin=self._desired_speed,
-          value_at_margin=0.5,
-          sigmoid='linear')
-
-      return _upright_reward(physics) * move_reward
-    else:
-      # Reward for moving close to the ball.
-      arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
-      workspace_radius = physics.named.model.site_size['workspace', 0]
-      ball_radius = physics.named.model.geom_size['ball', 0]
-      reach_reward = rewards.tolerance(
-          physics.self_to_ball_distance(),
-          bounds=(0, workspace_radius+ball_radius),
-          sigmoid='linear',
-          margin=arena_radius, value_at_margin=0)
-
-      # Reward for bringing the ball to the target.
-      target_radius = physics.named.model.site_size['target', 0]
-      fetch_reward = rewards.tolerance(
-          physics.ball_to_target_distance(),
-          bounds=(0, target_radius),
-          sigmoid='linear',
-          margin=arena_radius, value_at_margin=0)
-
-      reach_then_fetch = reach_reward * (0.5 + 0.5*fetch_reward)
-
-      return _upright_reward(physics) * reach_then_fetch
-
-
 class FetchTransfer(base.Task):
   """
   Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
@@ -642,7 +593,9 @@ class FetchTransfer(base.Task):
   def get_observation(self, physics):
     """Returns an observation to the agent."""
     obs = _common_observations(physics)
-    obs['ball_state'] = physics.ball_state()
+    obs['torso_pos'] = physics.torso_pos()
+    obs['fwd_vec'] = physics.global_forward_vector()
+    #obs['ball_state'] = physics.ball_state()
     obs['target_position'] = physics.target_position()
     return obs
 
@@ -671,14 +624,105 @@ class FetchTransfer(base.Task):
           sigmoid='linear',
           margin=arena_radius, value_at_margin=0)
 
-      # Reward for bringing the ball to the target.
-      target_radius = physics.named.model.site_size['target', 0]
-      fetch_reward = rewards.tolerance(
-          physics.ball_to_target_distance(),
-          bounds=(0, target_radius),
-          sigmoid='linear',
-          margin=arena_radius, value_at_margin=0)
+      return _upright_reward(physics) * reach_reward
 
-      reach_then_fetch = reach_reward * (0.5 + 0.5*fetch_reward)
+class ReachTransfer(base.Task):
+  """
+  Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
+  A quadruped task solved by bringing a ball to the origin."""
 
-      return _upright_reward(physics) * reach_then_fetch
+  def __init__(self, pretransfer, desired_speed, random=None):
+    """Initializes an instance of `Move`.
+
+    Args:
+      pretransfer: A bool. If true, solve the velocity task. If false, solve the fetch task
+      desired_speed: A float. If this value is zero, reward is given simply
+        for standing upright. Otherwise this specifies the velocity norm
+        at which the velocity-dependent reward component is maximized.
+      random: Optional, either a `numpy.random.RandomState` instance, an
+        integer seed for creating a new `RandomState`, or None to select a seed
+        automatically (default).
+    """
+    self._pretransfer = pretransfer
+    self._desired_speed = desired_speed
+    super(ReachTransfer, self).__init__(random=random)
+
+  def initialize_episode(self, physics):
+    """Sets the state of the environment at the start of each episode.
+
+    Args:
+      physics: An instance of `Physics`.
+
+    """
+
+    spawn_radius = 0.75 * physics.named.model.geom_size['floor', 0]
+    x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
+    # if self._pretransfer:
+    # orientation = self.random.randn(4)
+    # orientation /= np.linalg.norm(orientation)
+
+    azimuth = self.random.uniform(0, 2*np.pi)
+    orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
+    _find_non_contacting_height(physics, orientation, x_pos, y_pos)
+    # else:
+      # Initial configuration, random azimuth and horizontal position.
+    # azimuth = self.random.uniform(0, 2*np.pi)
+    # orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
+    # _find_non_contacting_height(physics, orientation, x_pos, y_pos)
+
+    # Initial ball state.
+    # physics.named.data.qpos['ball_root'][:2] = self.random.uniform(
+    #     -spawn_radius, spawn_radius, size=(2,))
+    # physics.named.data.qpos['ball_root'][2] = 0.3
+    # physics.named.data.qvel['ball_root'][:2] = 5*self.random.randn(2)*0.2
+
+    spawn_radius = 0.8 * physics.named.model.geom_size['floor', 0]
+    x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
+    physics.named.model.site_pos['target', 'x'] = x_pos
+    physics.named.model.site_pos['target', 'y'] = y_pos
+    super(ReachTransfer, self).initialize_episode(physics)
+
+  def get_observation(self, physics):
+    """Returns an observation to the agent."""
+    obs = _common_observations(physics)
+    #obs['ball_state'] = physics.ball_state()
+    obs['torso_pos'] = physics.torso_pos()
+    obs['glob_fwd_vec'] = physics.global_forward_vector()
+    obs['target_position'] = physics.target_position()
+    return obs
+
+  def _reach_reward(self, physics):
+    arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
+    target_radius = physics.named.model.site_size['target', 0]
+    #workspace_radius = physics.named.model.site_size['workspace', 0]
+    #ball_radius = physics.named.model.geom_size['ball', 0]
+    reach_reward = rewards.tolerance(
+        physics.self_to_ball_distance(),
+        bounds=(0, target_radius),
+        sigmoid='linear',
+        margin=arena_radius, value_at_margin=0)
+    return _upright_reward(physics) * reach_reward
+
+  def _move_reward(self, physics):
+    move_reward = rewards.tolerance(
+        physics.torso_velocity()[0],
+        bounds=(self._desired_speed, float('inf')),
+        margin=self._desired_speed,
+        value_at_margin=0.5,
+        sigmoid='linear')
+
+    return _upright_reward(physics) * move_reward
+
+  def get_transfer_reward(self, physics):
+    # Return transfer reward if we are in pretransfer stage
+    if self._pretransfer:
+      return self._reach_reward(physics)
+    else:
+      raise NotImplementedError()
+
+  def get_reward(self, physics):
+    """Returns a reward to the agent."""
+    if self._pretransfer:
+      return self._move_reward(physics)
+    else:
+      return self._reach_reward(physics)

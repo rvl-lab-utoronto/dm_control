@@ -51,6 +51,16 @@ def get_model_and_assets():
   """Returns a tuple containing the model XML string and a dict of assets."""
   return common.read_model('walker.xml'), common.ASSETS
 
+
+def objective_speed_env(objective_speed, time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Run task."""
+  physics = Physics.from_xml_string(*get_model_and_assets())
+  task = PlanarWalkerObjectiveSpeed(objective_speed=objective_speed, random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(
+      physics, task, time_limit=time_limit, control_timestep=_CONTROL_TIMESTEP,
+      **environment_kwargs)
+
 @SUITE.add()
 def back(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   """Returns the Run task."""
@@ -76,14 +86,26 @@ def run(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   """Returns the Run task."""
   return objective_speed_env(_RUN_SPEED, time_limit=time_limit, random=random, environment_kwargs=environment_kwargs)
 
-def objective_speed_env(objective_speed, time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+
+def transfer_objective_speed_env(objective_speed, transfer_objective_speed, pretransfer, time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   """Returns the Run task."""
   physics = Physics.from_xml_string(*get_model_and_assets())
-  task = PlanarWalkerObjectiveSpeed(objective_speed=objective_speed, random=random)
+  task = PlanarWalkerObjectiveSpeedTransfer(objective_speed, transfer_objective_speed, pretransfer, random=random)
   environment_kwargs = environment_kwargs or {}
   return control.Environment(
       physics, task, time_limit=time_limit, control_timestep=_CONTROL_TIMESTEP,
       **environment_kwargs)
+
+# HACK hardcoded transfer from walk to walk back
+@SUITE.add()
+def transf1pre(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Run task."""
+  return transfer_objective_speed_env(_WALK_SPEED, _BACK_SPEED, True, time_limit=time_limit, random=random, environment_kwargs=environment_kwargs)
+
+@SUITE.add()
+def transf1post(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Run task."""
+  return transfer_objective_speed_env(_WALK_SPEED, _BACK_SPEED, False, time_limit=time_limit, random=random, environment_kwargs=environment_kwargs)
 
 
 class Physics(mujoco.Physics):
@@ -156,3 +178,72 @@ class PlanarWalkerObjectiveSpeed(base.Task):
                                     value_at_margin=0.5,
                                     sigmoid='linear')
     return stand_reward * (5*move_reward + 1) / 6
+
+
+# hack for reward relabelling
+class PlanarWalkerObjectiveSpeedTransfer(base.Task):
+  """A planar walker task."""
+
+  def __init__(self, objective_speed, transfer_objective_speed, pretransfer, random=None):
+    """Initializes an instance of `PlanarWalker`.
+
+    Args:
+      objective_speed: A float. This specifies a target horizontal velocity for
+        the walking task.
+      random: Optional, either a `numpy.random.RandomState` instance, an
+        integer seed for creating a new `RandomState`, or None to select a seed
+        automatically (default).
+    """
+    self._objective_speed = objective_speed
+    self._transfer_objective_speed = transfer_objective_speed
+    self._pretransfer = pretransfer
+    super(PlanarWalkerObjectiveSpeedTransfer, self).__init__(random=random)
+
+  def _get_reward_speed(self, physics, obj_speed):
+    standing = rewards.tolerance(physics.torso_height(),
+                                 bounds=(_STAND_HEIGHT, float('inf')),
+                                 margin=_STAND_HEIGHT/2)
+    upright = (1 + physics.torso_upright()) / 2
+    stand_reward = (3*standing + upright) / 4
+    move_reward = rewards.tolerance(physics.horizontal_velocity(),
+                                    bounds=(obj_speed, obj_speed+0.01),
+                                    margin=abs(obj_speed)/2,
+                                    value_at_margin=0.5,
+                                    sigmoid='linear')
+    return stand_reward * (5*move_reward + 1) / 6
+
+  
+  def get_transfer_reward(self, physics):
+    # Return transfer reward if we are in pretransfer stage
+    if self._pretransfer:
+      return self._get_reward_speed(physics, self._transfer_objective_speed)
+    else:
+      raise NotImplementedError()
+
+  def get_reward(self, physics):
+    """Returns a reward to the agent."""
+    if self._pretransfer:
+      return self._get_reward_speed(physics, self._objective_speed)
+    else:
+      return self._get_reward_speed(physics, self._transfer_objective_speed)
+
+  def initialize_episode(self, physics):
+    """Sets the state of the environment at the start of each episode.
+
+    In 'standing' mode, use initial orientation and small velocities.
+    In 'random' mode, randomize joint angles and let fall to the floor.
+
+    Args:
+      physics: An instance of `Physics`.
+
+    """
+    randomizers.randomize_limited_and_rotational_joints(physics, self.random)
+    super(PlanarWalkerObjectiveSpeedTransfer, self).initialize_episode(physics)
+
+  def get_observation(self, physics):
+    """Returns an observation of body orientations, height and velocites."""
+    obs = collections.OrderedDict()
+    obs['orientations'] = physics.orientations()
+    obs['height'] = physics.torso_height()
+    obs['velocity'] = physics.velocity()
+    return obs
