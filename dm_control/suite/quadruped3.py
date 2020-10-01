@@ -122,6 +122,27 @@ def reachtransferpost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_k
                              control_timestep=_CONTROL_TIMESTEP,
                              **environment_kwargs)
 
+@SUITE.add()
+def reachface(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = FacingReach(pretransfer=False, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def turn(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = Turn(pretransfer=False, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
 
 
 class Physics(mujoco.Physics):
@@ -310,7 +331,7 @@ class ReachTransfer(base.Task):
   Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
   A quadruped task solved by bringing a ball to the origin."""
 
-  def __init__(self, pretransfer, desired_speed, random=None):
+  def __init__(self, pretransfer, desired_speed, random=None, fix=False):
     """Initializes an instance of `Move`.
 
     Args:
@@ -405,3 +426,130 @@ class ReachTransfer(base.Task):
       return self._move_reward(physics)
     else:
       return self._reach_reward(physics)
+
+class FacingReach(ReachTransfer):
+  """
+  Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
+  A quadruped task solved by bringing a ball to the origin."""
+
+  def __init__(self, pretransfer, desired_speed, random=None):
+    """Initializes an instance of `Move`.
+
+    Args:
+      pretransfer: A bool. If true, solve the velocity task. If false, solve the fetch task
+      desired_speed: A float. If this value is zero, reward is given simply
+        for standing upright. Otherwise this specifies the velocity norm
+        at which the velocity-dependent reward component is maximized.
+      random: Optional, either a `numpy.random.RandomState` instance, an
+        integer seed for creating a new `RandomState`, or None to select a seed
+        automatically (default).
+    """
+    # Fixed forward facing target for now
+    super(FacingReach, self).__init__(pretransfer, desired_speed, random=random)
+    self._target_forward_vec = np.array([1,0,0])
+
+  def _reach_reward(self, physics):
+    arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
+    target_radius = physics.named.model.site_size['target', 0]
+    #workspace_radius = physics.named.model.site_size['workspace', 0]
+    #ball_radius = physics.named.model.geom_size['ball', 0]
+    reach_reward = rewards.tolerance(
+        physics.self_to_target_distance(),
+        bounds=(0, target_radius),
+        sigmoid='linear',
+        margin=arena_radius, value_at_margin=0)
+
+    deviation_angle = 0.0
+    deviation = np.cos(np.deg2rad(deviation_angle))
+    facing_reward = rewards.tolerance(
+        physics.global_forward_vector().dot(self._target_forward_vec),
+        bounds=(deviation, float('inf')),
+        sigmoid='linear',
+        margin=1 + deviation,
+        value_at_margin=0)
+    return _upright_reward(physics) * facing_reward * (0.5 + 0.5 * reach_reward)
+
+class Facing(ReachTransfer):
+  """
+  Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
+  A quadruped task solved by bringing a ball to the origin."""
+
+  def __init__(self, pretransfer, desired_speed, random=None):
+    """Initializes an instance of `Move`.
+
+    Args:
+      pretransfer: A bool. If true, solve the velocity task. If false, solve the fetch task
+      desired_speed: A float. If this value is zero, reward is given simply
+        for standing upright. Otherwise this specifies the velocity norm
+        at which the velocity-dependent reward component is maximized.
+      random: Optional, either a `numpy.random.RandomState` instance, an
+        integer seed for creating a new `RandomState`, or None to select a seed
+        automatically (default).
+    """
+    # Fixed forward facing target for now
+    super(Facing, self).__init__(pretransfer, desired_speed, random=random)
+    self._target_forward_vec = np.array([1,0,0])
+
+  def _reach_reward(self, physics):
+    arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
+    target_radius = physics.named.model.site_size['target', 0]
+    #workspace_radius = physics.named.model.site_size['workspace', 0]
+    #ball_radius = physics.named.model.geom_size['ball', 0]
+    # reach_reward = rewards.tolerance(
+    #     physics.self_to_target_distance(),
+    #     bounds=(0, target_radius),
+    #     sigmoid='linear',
+    #     margin=arena_radius, value_at_margin=0)
+
+    deviation_angle = 0.0
+    deviation = np.cos(np.deg2rad(deviation_angle))
+    facing_reward = rewards.tolerance(
+        physics.global_forward_vector().dot(self._target_forward_vec),
+        bounds=(deviation, float('inf')),
+        sigmoid='linear',
+        margin=1 + deviation,
+        value_at_margin=0)
+    return _upright_reward(physics) * facing_reward
+
+
+class Turn(ReachTransfer):
+  """
+  Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
+  A quadruped task solved by bringing a ball to the origin."""
+
+  def __init__(self, pretransfer, desired_speed, random=None):
+    """Initializes an instance of `Move`.
+
+    Args:
+      pretransfer: A bool. If true, solve the velocity task. If false, solve the fetch task
+      desired_speed: A float. If this value is zero, reward is given simply
+        for standing upright. Otherwise this specifies the velocity norm
+        at which the velocity-dependent reward component is maximized.
+      random: Optional, either a `numpy.random.RandomState` instance, an
+        integer seed for creating a new `RandomState`, or None to select a seed
+        automatically (default).
+    """
+    # Fixed forward facing target for now
+    super(Facing, self).__init__(pretransfer, desired_speed, random=random)
+    self._target_forward_vec = np.array([1,0,0])
+
+  def _reach_reward(self, physics):
+    arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
+    target_radius = physics.named.model.site_size['target', 0]
+    #workspace_radius = physics.named.model.site_size['workspace', 0]
+    #ball_radius = physics.named.model.geom_size['ball', 0]
+    # reach_reward = rewards.tolerance(
+    #     physics.self_to_target_distance(),
+    #     bounds=(0, target_radius),
+    #     sigmoid='linear',
+    #     margin=arena_radius, value_at_margin=0)
+
+    deviation_angle = 0.0
+    deviation = np.cos(np.deg2rad(deviation_angle))
+    facing_reward = rewards.tolerance(
+        physics.global_forward_vector().dot(self._target_forward_vec),
+        bounds=(deviation, float('inf')),
+        sigmoid='linear',
+        margin=1 + deviation,
+        value_at_margin=0)
+    return _upright_reward(physics) * facing_reward
