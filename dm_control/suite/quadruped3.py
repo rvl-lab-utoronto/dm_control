@@ -123,6 +123,28 @@ def reachtransferpost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_k
                              **environment_kwargs)
 
 @SUITE.add()
+def reachsparsepre(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = ReachTransfer(pretransfer=True, desired_speed=_WALK_SPEED,random=random, sparse=True)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def reachsparsepost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = ReachTransfer(pretransfer=False, desired_speed=_WALK_SPEED,random=random, sparse=True)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
 def reachface(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   """Returns the Fetch task."""
   xml_string = make_model(walls=True, ball=False)
@@ -139,6 +161,39 @@ def turn(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   xml_string = make_model(walls=True, ball=False)
   physics = Physics.from_xml_string(xml_string, common.ASSETS)
   task = Turn(pretransfer=False, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def reachfixhack(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = ReachTransferFixedHack(pretransfer=True, desired_speed=_WALK_SPEED,random=random)
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def reachfixhack1(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = ReachTransferFixedHack(pretransfer=False, desired_speed=_WALK_SPEED,random=random, fix_target=(3.,0.))
+  environment_kwargs = environment_kwargs or {}
+  return control.Environment(physics, task, time_limit=time_limit,
+                             control_timestep=_CONTROL_TIMESTEP,
+                             **environment_kwargs)
+
+@SUITE.add()
+def reachfixhack2(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+  """Returns the Fetch task."""
+  xml_string = make_model(walls=True, ball=False)
+  physics = Physics.from_xml_string(xml_string, common.ASSETS)
+  task = ReachTransferFixedHack(pretransfer=False, desired_speed=_WALK_SPEED,random=random, fix_target=(-3.,0.))
   environment_kwargs = environment_kwargs or {}
   return control.Environment(physics, task, time_limit=time_limit,
                              control_timestep=_CONTROL_TIMESTEP,
@@ -325,13 +380,86 @@ def _upright_reward(physics, deviation_angle=0):
       margin=1 + deviation,
       value_at_margin=0)
 
+class ReachTransferFixedHack(base.Task):
+  def __init__(self, pretransfer, desired_speed, random=None, fix_target=None):
+    """
+    fix_target: tuple of floats (x,y) position for the target
+    """
+    self._pretransfer = pretransfer
+    self._desired_speed = desired_speed
+    self._fix_target = fix_target
+    if self._fix_target is None:
+      self._fix_target = [0.,0.]
+    super(ReachTransferFixedHack, self).__init__(random=random)
+
+  def initialize_episode(self, physics):
+    # spawn_radius = 0.75 * physics.named.model.geom_size['floor', 0]
+    # x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
+    x_pos = -2.
+    y_pos = 0.
+    azimuth = self.random.uniform(-np.pi/16, np.pi/16)
+    azimuth = 0.
+    orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
+    _find_non_contacting_height(physics, orientation, x_pos, y_pos)
+
+    # spawn_radius = 0.8 * physics.named.model.geom_size['floor', 0]
+    # x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
+    physics.named.model.site_pos['target', 'x'] = self._fix_target[0]
+    physics.named.model.site_pos['target', 'y'] = self._fix_target[1]
+    super(ReachTransferFixedHack, self).initialize_episode(physics)
+
+  def get_observation(self, physics):
+    """Returns an observation to the agent."""
+    obs = _common_observations(physics)
+    #obs['ball_state'] = physics.ball_state()
+    obs['torso_pos'] = physics.torso_pos()
+    obs['glob_fwd_vec'] = physics.global_forward_vector()
+    obs['target_position'] = physics.target_position()
+    return obs
+
+  def _reach_reward(self, physics):
+    arena_radius = physics.named.model.geom_size['floor', 0] * np.sqrt(2)
+    target_radius = physics.named.model.site_size['target', 0]
+    #workspace_radius = physics.named.model.site_size['workspace', 0]
+    #ball_radius = physics.named.model.geom_size['ball', 0]
+    reach_reward = rewards.tolerance(
+        physics.self_to_target_distance(),
+        bounds=(0, target_radius),
+        sigmoid='linear',
+        margin=arena_radius, value_at_margin=0)
+    return _upright_reward(physics) * reach_reward
+
+  def _move_reward(self, physics):
+    move_reward = rewards.tolerance(
+        physics.torso_velocity()[0],
+        bounds=(self._desired_speed, float('inf')),
+        margin=self._desired_speed,
+        value_at_margin=0.5,
+        sigmoid='linear')
+
+    return _upright_reward(physics) * move_reward
+
+  def get_transfer_reward(self, physics):
+    # Return transfer reward if we are in pretransfer stage
+    if self._pretransfer:
+      return self._reach_reward(physics)
+    else:
+      raise NotImplementedError()
+
+  def get_reward(self, physics):
+    """Returns a reward to the agent."""
+    if self._pretransfer:
+      return self._move_reward(physics)
+    else:
+      return self._reach_reward(physics)
+
 
 class ReachTransfer(base.Task):
   """
   Transfer version of fetch, where it first learns to walk at given speed, then learns fetch.
   A quadruped task solved by bringing a ball to the origin."""
 
-  def __init__(self, pretransfer, desired_speed, random=None, fix=False):
+  def __init__(self, pretransfer, desired_speed, random=None, sparse=False):
     """Initializes an instance of `Move`.
 
     Args:
@@ -342,9 +470,11 @@ class ReachTransfer(base.Task):
       random: Optional, either a `numpy.random.RandomState` instance, an
         integer seed for creating a new `RandomState`, or None to select a seed
         automatically (default).
+      sparse: Default false. Will give sparse reward in reach task instead.
     """
     self._pretransfer = pretransfer
     self._desired_speed = desired_speed
+    self._sparse = sparse
     super(ReachTransfer, self).__init__(random=random)
 
   def initialize_episode(self, physics):
@@ -396,11 +526,16 @@ class ReachTransfer(base.Task):
     target_radius = physics.named.model.site_size['target', 0]
     #workspace_radius = physics.named.model.site_size['workspace', 0]
     #ball_radius = physics.named.model.geom_size['ball', 0]
-    reach_reward = rewards.tolerance(
-        physics.self_to_target_distance(),
-        bounds=(0, target_radius),
-        sigmoid='linear',
-        margin=arena_radius, value_at_margin=0)
+    if self._sparse:
+      reach_reward = rewards.tolerance(
+          physics.self_to_target_distance(),
+          bounds=(0, target_radius))
+    else:
+      reach_reward = rewards.tolerance(
+          physics.self_to_target_distance(),
+          bounds=(0, target_radius),
+          sigmoid='linear',
+          margin=arena_radius, value_at_margin=0)
     return _upright_reward(physics) * reach_reward
 
   def _move_reward(self, physics):

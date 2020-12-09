@@ -49,6 +49,7 @@ from dm_control.suite import walker2
 from dm_control.suite import swimmer2
 from dm_control.suite import quadruped2
 from dm_control.suite import quadruped3
+from dm_control.suite import quad3pillars
 from dm_control.suite import pm2
 
 # Find all domains imported.

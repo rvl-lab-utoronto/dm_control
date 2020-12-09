@@ -534,15 +534,15 @@ class FetchTransfer(base.Task):
 
     spawn_radius = 0.9 * physics.named.model.geom_size['floor', 0]
     x_pos, y_pos = self.random.uniform(-spawn_radius, spawn_radius, size=(2,))
-    # if self._pretransfer:
-    #   orientation = self.random.randn(4)
-    #   orientation /= np.linalg.norm(orientation)
-    #   _find_non_contacting_height(physics, orientation)
-    # else:
+    if self._pretransfer:
+      orientation = self.random.randn(4)
+      orientation /= np.linalg.norm(orientation)
+      _find_non_contacting_height(physics, orientation)
+    else:
       # Initial configuration, random azimuth and horizontal position.
-    azimuth = self.random.uniform(0, 2*np.pi)
-    orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
-    _find_non_contacting_height(physics, orientation, x_pos, y_pos)
+      azimuth = self.random.uniform(0, 2*np.pi)
+      orientation = np.array((np.cos(azimuth/2), 0, 0, np.sin(azimuth/2)))
+      _find_non_contacting_height(physics, orientation, x_pos, y_pos)
 
     # Initial ball state.
     physics.named.data.qpos['ball_root'][:2] = self.random.uniform(

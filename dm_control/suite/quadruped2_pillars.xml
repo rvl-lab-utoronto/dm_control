@@ -87,7 +87,8 @@
     <!-- <camera name="global"  pos="-2 2 2" xyaxes="-1 -1 0 1 0 1" mode="trackcom"/> -->
     <!-- <camera name="global"  pos="-2 2 3.0" xyaxes="-1 -1 0 1 0 1"/> -->
     <!-- <camera name="global"  pos="-4 4 4.0" xyaxes="-1 -1 0 1 0 1"/> -->
-    <camera name="global"  pos="-4 4 4.0" xyaxes="-1 -1 0 1 0 1" mode="trackcom"/>
+    <!-- <camera name="global"  pos="-6 6 6.0" xyaxes="-1 -1 0 1 0 1" mode="trackcom"/> -->
+    <camera name="global"  pos="0 -4.5 8.0" xyaxes="1 0 0 0 1 0.5"/>
     <body name="torso" childclass="body" pos="0 0 .57">
       <freejoint name="root"/>
 
@@ -205,6 +206,42 @@
       <geom name="ball" size=".15" material="ball" priority="1" condim="6" friction=".7 .005 .005"
             solref="-10000 -30"/>
       <light name="ball_light" pos="0 0 4" mode="trackcom"/>
+    </body>
+
+    <!-- props -->
+    <body name="pillar0" pos="0 0 0">
+      <!-- <joint name="pillar0_x" type="slide" axis="1 0 0" damping="100"/>
+      <joint name="pillar0_y" type="slide" axis="0 1 0" damping="100"/> -->
+      <geom name="pillar0" type="cylinder" rgba=".3 .7 .3 .4" size=".25"  fromto="0 0 0.1 0 0 1.25" priority="1" mass="0"/>
+      <site  name="pillar0" type="sphere"/>
+    </body>
+
+    <body name="pillar1" pos="0 0 0">
+      <!-- <joint name="pillar1_x" type="slide" axis="1 0 0" damping="100"/>
+      <joint name="pillar1_y" type="slide" axis="0 1 0" damping="100"/> -->
+      <geom name="pillar1" type="cylinder" rgba=".3 .7 .3 .4" size=".25"  fromto="0 0 0.1 0 0 1.25" priority="1" mass="0"/>
+      <site  name="pillar1" type="sphere"/>
+    </body>
+
+    <body name="pillar2" pos="0 0 0">
+      <!-- <joint name="pillar2_x" type="slide" axis="1 0 0" damping="100"/>
+      <joint name="pillar2_y" type="slide" axis="0 1 0" damping="100"/> -->
+      <geom name="pillar2" type="cylinder" rgba=".3 .7 .3 .4" size=".25"  fromto="0 0 0.1 0 0 1.25" priority="1" mass="0"/>
+      <site  name="pillar2" type="sphere"/>
+    </body>
+
+    <body name="pillar3" pos="0 0 0">
+      <!-- <joint name="pillar3_x" type="slide" axis="1 0 0" damping="100"/>
+      <joint name="pillar3_y" type="slide" axis="0 1 0" damping="100"/> -->
+      <geom name="pillar3" type="cylinder" rgba=".3 .7 .3 .4" size=".25"  fromto="0 0 0.1 0 0 1.25" priority="1" mass=""/>
+      <site  name="pillar3" type="sphere"/>
+    </body>
+
+    <body name="pillar4" pos="0 0 0">
+      <!-- <joint name="pillar3_x" type="slide" axis="1 0 0" damping="100"/>
+      <joint name="pillar3_y" type="slide" axis="0 1 0" damping="100"/> -->
+      <geom name="pillar4" type="cylinder" rgba=".3 .7 .3 .4" size=".25"  fromto="0 0 0.1 0 0 1.25" priority="1" mass=""/>
+      <site  name="pillar4" type="sphere"/>
     </body>
 
   </worldbody>
