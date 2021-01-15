@@ -88,7 +88,7 @@
     <!-- <camera name="global"  pos="-2 2 3.0" xyaxes="-1 -1 0 1 0 1"/> -->
     <!-- <camera name="global"  pos="-4 4 4.0" xyaxes="-1 -1 0 1 0 1"/> -->
     <!-- <camera name="global"  pos="-6 6 6.0" xyaxes="-1 -1 0 1 0 1" mode="trackcom"/> -->
-    <camera name="global"  pos="0 -4.5 8.0" xyaxes="1 0 0 0 1 0.5"/>
+    <camera name="global"  pos="0 -4.8 8.0" xyaxes="1 0 0 0 1 0.5"/>
     <body name="torso" childclass="body" pos="0 0 .57">
       <freejoint name="root"/>
 
