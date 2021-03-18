@@ -38,8 +38,8 @@ enums = mjbindings.enums
 mjlib = mjbindings.mjlib
 
 
-#_DEFAULT_TIME_LIMIT = 20/2
-_DEFAULT_TIME_LIMIT = 20
+_DEFAULT_TIME_LIMIT = 20/2
+# _DEFAULT_TIME_LIMIT = 20
 _CONTROL_TIMESTEP = .02
 
 _N_PILLARS = 5
@@ -88,7 +88,7 @@ def make_model(floor_size=None, terrain=False, rangefinders=False,
     # Remove target.
     target_site = xml_tools.find_element(mjcf, 'site', 'target')
     target_site.getparent().remove(target_site)
-    
+
   if not ball:
     # Remove ball.
     ball_body = xml_tools.find_element(mjcf, 'body', 'ball')
@@ -132,7 +132,7 @@ def reachtransferpost(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_k
                              **environment_kwargs)
 
 @SUITE.add()
-def reachtransferpostsparse(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
+def reachtransferpostsparse(time_limit=_DEFAULT_TIME_LIMIT*2, random=None, environment_kwargs=None):
   """Returns the Fetch task."""
   xml_string = make_model(walls=True, ball=False)
   physics = Physics.from_xml_string(xml_string, common.ASSETS)
@@ -419,12 +419,12 @@ class ReachTransferPillars(base.Task):
     elif mid_pos[0] < -mid_pos_bound:
       mid_pos[0] = -mid_pos_bound
 
-    pillar_pos = [x + mid_pos for x in pillar_pos] 
+    pillar_pos = [x + mid_pos for x in pillar_pos]
     # print('pill', np.stack(pillar_pos))
     # print('targ', targ_pos)
 
     self._initialize_with_pos(physics, targ_pos, quad_pos, pillar_pos)
-  
+
   def intialize_pillars_random(self, physics):
     data = physics.named.data
 
@@ -455,7 +455,7 @@ class ReachTransferPillars(base.Task):
 
       pillar_pos = []
       for i in range(self._n_pillars):
-        middle_pos = (0.5*quad_pos+0.5*targ_pos) 
+        middle_pos = (0.5*quad_pos+0.5*targ_pos)
         if i == 0:
           # Put a pillar in the middle
           pillar_pos.append(middle_pos)
@@ -512,16 +512,20 @@ class ReachTransferPillars(base.Task):
     #workspace_radius = physics.named.model.site_size['workspace', 0]
     #ball_radius = physics.named.model.geom_size['ball', 0]
     if self._sparse:
+      # reach_reward = rewards.tolerance(
+      #     physics.self_to_target_distance(),
+      #     bounds=(0, 2*target_radius), sigmoid='linear',margin=4*target_radius, value_at_margin=0)
       reach_reward = rewards.tolerance(
           physics.self_to_target_distance(),
-          bounds=(0, 2*target_radius), sigmoid='linear',margin=4*target_radius, value_at_margin=0)
+          bounds=(0, 4.*target_radius), sigmoid='linear',margin=0., value_at_margin=0)
     else:
       reach_reward = rewards.tolerance(
           physics.self_to_target_distance(),
           bounds=(0, target_radius),
           sigmoid='linear',
           margin=arena_radius, value_at_margin=0)
-    return _upright_reward(physics) * (0.1+0.9*reach_reward)
+    # return _upright_reward(physics) * (0.1+0.9*reach_reward)
+    return _upright_reward(physics) * reach_reward
 
   def _move_reward(self, physics):
     move_reward = rewards.tolerance(
